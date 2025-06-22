@@ -11,6 +11,7 @@ import requests
 import json
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.sql import text
+from flask_socketio import SocketIO
 
 ## usual Flask initilization
 app = Flask(__name__)
@@ -24,6 +25,8 @@ db_name = 'notes.db'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + db_name
 # this variable, db, will be used for all SQLAlchemy commands
 db = SQLAlchemy(app)
+
+socketio = SocketIO(app)
 
 ## define a table in the database
 
@@ -49,7 +52,7 @@ http :5001/api/version
 """
 @app.route('/api/version')
 def version():
-    return {version : VERSION}
+    return {'version' : VERSION}
 
 # try it with
 """
@@ -62,7 +65,10 @@ def create_note():
         parameters = json.loads(request.data)
         title = parameters['title']
         content = parameters['content']
-        done = parameters['done']
+        if 'done' in parameters.keys() :
+            done = parameters['done']
+        else :
+            done = False
         print("received request to create note", title, content, done)
         # temporary
         new_note = Note(title = title, content = content, done = done)
@@ -78,13 +84,14 @@ def list_users():
     return [{'id' : note.id, 'title' : note.title, 'content' : note.content, 'done' : note.done} for note in notes]
 
 @app.route('/api/notes/<int:id>/done', methods = ['POST'])
-def done(id : 'str'):
+def done(id):
     notes = Note.query.all()
     i = 0
     for note in notes :
         if note.id == id :
             note.done = 1 - note.done
             db.session.commit()
+            socketio.emit('done_change', {'id': note.id, 'done': note.done})
             break
         else :
             i += 1
@@ -94,6 +101,7 @@ def done(id : 'str'):
 """
 http://localhost:5001/front/notes
 """
+
 @app.route('/front/notes')
 def front_notes():
     # first option of course, is to get all notes from DB
